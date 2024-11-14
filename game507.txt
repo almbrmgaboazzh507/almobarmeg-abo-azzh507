@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لعبة مغامرة الهروب مع مستويات</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #fff;
+            border: 2px solid #000;
+        }
+
+        #scoreboard, #levelDisplay {
+            position: absolute;
+            top: 20px;
+            font-size: 24px;
+            color: black;
+        }
+
+        #scoreboard {
+            left: 20px;
+        }
+
+        #levelDisplay {
+            right: 20px;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 32px;
+            color: red;
+        }
+
+        #paused {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 32px;
+            color: yellow;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="scoreboard">النقاط: 0</div>
+<div id="levelDisplay">المستوى: 1</div>
+<div id="gameOver" style="display: none;">لقد خسرت! اضغط R لإعادة اللعب</div>
+<div id="paused">اللعبة موقوفة! اضغط ESC لاستئناف</div>
+
+<script>
+// إعداد اللعبة
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const scoreboard = document.getElementById("scoreboard");
+const levelDisplay = document.getElementById("levelDisplay");
+const gameOverScreen = document.getElementById("gameOver");
+const pausedScreen = document.getElementById("paused");
+
+const playerWidth = 50;
+const playerHeight = 50;
+let playerX = canvas.width / 2 - playerWidth / 2;
+let playerY = canvas.height - playerHeight - 10;
+let playerSpeed = 5;
+let score = 0;
+let level = 1; // مستوى اللعبة
+let gameInterval;
+let obstacles = [];
+let obstacleInterval;
+let keys = {
+    w: false,
+    a: false,
+    s: false,
+    d: false
+};
+
+// حالة اللعبة
+let gamePaused = false;  // لتحديد إذا كانت اللعبة موقوفة أم لا
+
+// شخصية اللاعب
+const player = {
+    width: playerWidth,
+    height: playerHeight,
+    x: playerX,
+    y: playerY,
+    color: "green"
+};
+
+// العوائق
+class Obstacle {
+    constructor() {
+        this.width = Math.random() * (100 - 20) + 20;  // حجم عشوائي
+        this.height = 20;
+        this.x = Math.random() * (canvas.width - this.width); // موضع عشوائي
+        this.y = -this.height;
+        this.speed = Math.random() * 3 + 2 + level;  // سرعة العائق تزداد مع كل مستوى
+        this.color = "red";
+    }
+
+    // تحديث موضع العائق
+    update() {
+        this.y += this.speed;
+    }
+
+    // رسم العائق
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    // التحقق إذا كانت الشخصية اصطدمت بالعائق
+    checkCollision(player) {
+        if (player.x < this.x + this.width &&
+            player.x + player.width > this.x &&
+            player.y < this.y + this.height &&
+            player.y + player.height > this.y) {
+            return true;
+        }
+        return false;
+    }
+}
+
+// تحديث حركة اللاعب بناءً على ضغطات المفاتيح
+document.addEventListener("keydown", (e) => {
+    if (e.key === "w" || e.key === "W") keys.w = true;
+    if (e.key === "a" || e.key === "A") keys.a = true;
+    if (e.key === "s" || e.key === "S") keys.s = true;
+    if (e.key === "d" || e.key === "D") keys.d = true;
+
+    // التبديل بين إيقاف واستئناف اللعبة عند الضغط على ESC
+    if (e.key === "Escape") {
+        gamePaused = !gamePaused;
+        if (gamePaused) {
+            // إيقاف اللعبة مؤقتًا
+            clearInterval(gameInterval);
+            clearInterval(obstacleInterval);
+            pausedScreen.style.display = "block";  // عرض رسالة التوقف
+        } else {
+            // استئناف اللعبة
+            startGame();  // استئناف جميع العمليات
+            pausedScreen.style.display = "none";  // إخفاء رسالة التوقف
+        }
+    }
+
+    // إعادة تشغيل اللعبة عند الضغط على R
+    if (e.key === "r" || e.key === "R") {
+        location.reload();
+    }
+});
+
+document.addEventListener("keyup", (e) => {
+    if (e.key === "w" || e.key === "W") keys.w = false;
+    if (e.key === "a" || e.key === "A") keys.a = false;
+    if (e.key === "s" || e.key === "S") keys.s = false;
+    if (e.key === "d" || e.key === "D") keys.d = false;
+});
+
+// حركة اللاعب
+function movePlayer() {
+    if (keys.w && player.y > 0) player.y -= playerSpeed;
+    if (keys.s && player.y < canvas.height - player.height) player.y += playerSpeed;
+    if (keys.a && player.x > 0) player.x -= playerSpeed;
+    if (keys.d && player.x < canvas.width - player.width) player.x += playerSpeed;
+}
+
+// إضافة عوائق جديدة
+function addObstacle() {
+    obstacles.push(new Obstacle());
+}
+
+// التحقق من العوائق
+function checkObstacles() {
+    obstacles.forEach((obstacle, index) => {
+        obstacle.update();
+        obstacle.draw();
+
+        if (obstacle.checkCollision(player)) {
+            gameOver();
+        }
+
+        if (obstacle.y > canvas.height) {
+            obstacles.splice(index, 1);
+            score += 10; // زيادة النقاط عندما تمر العوائق
+            scoreboard.textContent = `النقاط: ${score}`;
+        }
+    });
+}
+
+// إنهاء اللعبة
+function gameOver() {
+    clearInterval(gameInterval);
+    clearInterval(obstacleInterval);
+    gameOverScreen.style.display = "block";
+}
+
+// تحديث المستوى
+function updateLevel() {
+    if (score >= level * 50) {  // كلما وصلت النقاط إلى 50 × المستوى، يزيد المستوى
+        level++;
+        levelDisplay.textContent = `المستوى: ${level}`;
+        playerSpeed += 1;  // زيادة سرعة اللاعب مع زيادة المستوى
+    }
+}
+
+// رسم اللعبة
+function drawGame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    checkObstacles();
+    movePlayer();
+    updateLevel();
+}
+
+// بدء اللعبة
+function startGame() {
+    gameInterval = setInterval(() => {
+        drawGame();
+    }, 1000 / 60); // 60 FPS
+
+    obstacleInterval = setInterval(() => {
+        addObstacle();
+    }, 2000 - (level * 100)); // تقليل الوقت بين العوائق مع كل مستوى (زيادة التحدي)
+}
+
+// بدء اللعبة فور تحميل الصفحة
+startGame();
+</script>
+
+</body>
+</html>
